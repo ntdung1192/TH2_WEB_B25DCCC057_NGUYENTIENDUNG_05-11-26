@@ -16,30 +16,26 @@ export const CITIES: City[] = [
   { id: 'cantho', name: 'Cần Thơ', lat: 10.0452, lon: 105.7469 },
 ]
 
-export type Theme = 'clear' | 'cloud' | 'rain' | 'storm' | 'fog' | 'snow'
+type Theme = 'clear' | 'cloud' | 'rain' | 'storm' | 'fog'
 
-export function describe(code: number): { icon: string; text: string; theme: Theme } {
-  if (code === 0) return { icon: '☀️', text: 'Trời quang', theme: 'clear' }
-  if (code === 1) return { icon: '🌤️', text: 'Ít mây', theme: 'clear' }
-  if (code === 2) return { icon: '⛅', text: 'Có mây rải rác', theme: 'cloud' }
-  if (code === 3) return { icon: '☁️', text: 'Nhiều mây', theme: 'cloud' }
-  if (code === 45 || code === 48) return { icon: '🌫️', text: 'Sương mù', theme: 'fog' }
-  if (code >= 51 && code <= 57) return { icon: '🌦️', text: 'Mưa phùn', theme: 'rain' }
-  if (code >= 61 && code <= 65) return { icon: '🌧️', text: 'Mưa', theme: 'rain' }
-  if (code === 66 || code === 67) return { icon: '🌧️', text: 'Mưa băng', theme: 'rain' }
-  if (code >= 71 && code <= 77) return { icon: '❄️', text: 'Tuyết', theme: 'snow' }
-  if (code >= 80 && code <= 82) return { icon: '🌦️', text: 'Mưa rào', theme: 'rain' }
-  if (code === 85 || code === 86) return { icon: '❄️', text: 'Mưa tuyết', theme: 'snow' }
-  if (code === 95) return { icon: '⛈️', text: 'Dông', theme: 'storm' }
-  if (code === 96 || code === 99) return { icon: '⛈️', text: 'Dông kèm mưa đá', theme: 'storm' }
-  return { icon: '❓', text: 'Không xác định', theme: 'cloud' }
+const CODES: [number[], string, string, Theme][] = [
+  [[0], '☀️', 'Trời quang', 'clear'],
+  [[1], '🌤️', 'Ít mây', 'clear'],
+  [[2], '⛅', 'Có mây', 'cloud'],
+  [[3], '☁️', 'Nhiều mây', 'cloud'],
+  [[45, 48], '🌫️', 'Sương mù', 'fog'],
+  [[51, 53, 55, 56, 57], '🌦️', 'Mưa phùn', 'rain'],
+  [[61, 63, 65, 66, 67], '🌧️', 'Mưa', 'rain'],
+  [[80, 81, 82], '🌦️', 'Mưa rào', 'rain'],
+  [[95, 96, 99], '⛈️', 'Dông', 'storm'],
+]
+
+export function describe(code: number) {
+  const found = CODES.find(([codes]) => codes.includes(code))
+  if (!found) return { icon: '🌡️', text: 'Không rõ', theme: 'cloud' }
+  const [, icon, text, theme] = found
+  return { icon, text, theme }
 }
 
-export function removeAccents(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase()
-}
+export const normalize = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase()

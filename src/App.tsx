@@ -1,166 +1,131 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CITIES, City, describe, removeAccents } from './data'
-import { fetchWeather, WeatherData } from './api'
+import { useEffect, useState } from 'react'
+import { CITIES, describe, normalize } from './data'
+import { getWeather, Weather } from './api'
 
-type Unit = 'C' | 'F'
-type Status = 'idle' | 'loading' | 'error' | 'success'
+const DAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 
-const WEEKDAYS = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy']
-
-const fmtTemp = (c: number, unit: Unit) =>
-  `${Math.round(unit === 'C' ? c : (c * 9) / 5 + 32)}°${unit}`
-
-function loadFavorites(): string[] {
+function readFavs(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem('favorites') || '[]')
-    return Array.isArray(v) ? v : []
+    return JSON.parse(localStorage.getItem('favs') || '[]')
   } catch {
     return []
   }
 }
 
 export default function App() {
-  const [selected, setSelected] = useState<City | null>(null)
-  const [status, setStatus] = useState<Status>('idle')
-  const [data, setData] = useState<WeatherData | null>(null)
+  const [city, setCity] = useState(CITIES[0])
+  const [weather, setWeather] = useState<Weather | null>(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [unit, setUnit] = useState<Unit>('C')
+  const [reload, setReload] = useState(0)
+  const [unit, setUnit] = useState<'C' | 'F'>('C')
   const [query, setQuery] = useState('')
-  const [favorites, setFavorites] = useState<string[]>(loadFavorites)
-  const [retry, setRetry] = useState(0)
+  const [favs, setFavs] = useState<string[]>(readFavs)
 
   useEffect(() => {
-    if (!selected) return
     const ctrl = new AbortController()
-    setStatus('loading')
+    setLoading(true)
     setError('')
-    fetchWeather(selected, ctrl.signal)
-      .then((d) => {
-        setData(d)
-        setStatus('success')
-      })
-      .catch((e: Error) => {
-        if (e.name === 'AbortError') return
-        setError(e.message || 'Không thể tải dữ liệu')
-        setStatus('error')
-      })
+    getWeather(city, ctrl.signal)
+      .then(setWeather)
+      .catch((e) => e.name !== 'AbortError' && setError(e.message || 'Không tải được dữ liệu'))
+      .finally(() => !ctrl.signal.aborted && setLoading(false))
     return () => ctrl.abort()
-  }, [selected, retry])
+  }, [city, reload])
 
   useEffect(() => {
-    try {
-      localStorage.setItem('favorites', JSON.stringify(favorites))
-    } catch {
-      /* ignore */
-    }
-  }, [favorites])
+    localStorage.setItem('favs', JSON.stringify(favs))
+  }, [favs])
 
   const toggleFav = (id: string) =>
-    setFavorites((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
+    setFavs((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
 
-  const list = useMemo(() => {
-    const q = removeAccents(query.trim())
-    return CITIES.filter((c) => removeAccents(c.name).includes(q)).sort(
-      (a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)),
-    )
-  }, [query, favorites])
+  const deg = (c: number) => Math.round(unit === 'C' ? c : c * 1.8 + 32) + '°'
 
-  const theme = status === 'success' && data ? describe(data.current.code).theme : 'default'
+  const cities = CITIES.filter((c) => normalize(c.name).includes(normalize(query.trim()))).sort(
+    (a, b) => Number(favs.includes(b.id)) - Number(favs.includes(a.id)),
+  )
+
+  const now = weather && describe(weather.code)
 
   return (
-    <div className={`app theme-${theme}`}>
-      <header>
-        <h1>🌤️ Thời tiết Việt Nam</h1>
-        <div className="unit-toggle" role="group" aria-label="Đơn vị nhiệt độ">
-          {(['C', 'F'] as Unit[]).map((u) => (
-            <button key={u} className={unit === u ? 'active' : ''} onClick={() => setUnit(u)}>
-              °{u}
-            </button>
-          ))}
-        </div>
-      </header>
+    <div className={`app ${now && !error ? now.theme : ''}`}>
+      <div className="wrap">
+        <header>
+          <span className="logo">Thời tiết</span>
+          <div className="switch">
+            {(['C', 'F'] as const).map((u) => (
+              <button key={u} className={unit === u ? 'on' : ''} onClick={() => setUnit(u)}>
+                °{u}
+              </button>
+            ))}
+          </div>
+        </header>
 
-      <main className="layout">
-        <aside className="card">
+        <div className="glass sidebar">
           <input
-            className="search"
-            type="search"
-            placeholder="Tìm thành phố..."
+            placeholder="Tìm thành phố"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <ul className="cities">
-            {list.map((c) => (
-              <li key={c.id} className={selected?.id === c.id ? 'selected' : ''}>
-                <button className="city-btn" onClick={() => setSelected(c)}>
-                  {c.name}
-                </button>
+          <ul>
+            {cities.map((c) => (
+              <li key={c.id} className={c.id === city.id ? 'active' : ''}>
+                <button onClick={() => setCity(c)}>{c.name}</button>
                 <button
-                  className="fav"
-                  aria-label={favorites.includes(c.id) ? 'Bỏ yêu thích' : 'Yêu thích'}
+                  className={favs.includes(c.id) ? 'star on' : 'star'}
                   onClick={() => toggleFav(c.id)}
+                  title="Yêu thích"
                 >
-                  {favorites.includes(c.id) ? '★' : '☆'}
+                  {favs.includes(c.id) ? '★' : '☆'}
                 </button>
               </li>
             ))}
-            {list.length === 0 && <li className="empty">Không tìm thấy thành phố</li>}
+            {cities.length === 0 && <li className="muted">Không có kết quả</li>}
           </ul>
-        </aside>
+        </div>
 
-        <section className="card detail">
-          {status === 'idle' && <p className="state">Hãy chọn một thành phố để xem thời tiết.</p>}
-          {status === 'loading' && (
-            <p className="state">
-              <span className="spinner" /> Đang tải dữ liệu...
-            </p>
-          )}
-          {status === 'error' && (
-            <div className="state error">
-              <p>⚠️ Lỗi: {error}</p>
-              <button className="retry" onClick={() => setRetry((n) => n + 1)}>
+        <main className="glass">
+          {error ? (
+            <div className="center">
+              <p>{error}</p>
+              <button className="btn" onClick={() => setReload((n) => n + 1)}>
                 Thử lại
               </button>
             </div>
-          )}
-          {status === 'success' && data && selected && (
-            <>
-              <h2>{selected.name}</h2>
-              <div className="current">
-                <div className="big-icon">{describe(data.current.code).icon}</div>
-                <div>
-                  <div className="temp">{fmtTemp(data.current.temperature, unit)}</div>
-                  <div className="desc">{describe(data.current.code).text}</div>
-                </div>
+          ) : !weather || !now ? (
+            <div className="center">
+              <span className="spinner" />
+            </div>
+          ) : (
+            <div className={loading ? 'fade' : ''}>
+              <p className="muted">{city.name}</p>
+              <div className="now">
+                <span className="temp">{deg(weather.temp)}</span>
+                <span className="icon">{now.icon}</span>
               </div>
-              <div className="stats">
-                <span>💧 Độ ẩm: {data.current.humidity}%</span>
-                <span>💨 Gió: {data.current.wind} km/h</span>
-                <span>🕒 Cập nhật: {data.current.time.replace('T', ' ')}</span>
+              <p>{now.text}</p>
+              <div className="meta">
+                <span>Độ ẩm {weather.humidity}%</span>
+                <span>Gió {weather.wind} km/h</span>
               </div>
-              <h3>Dự báo 7 ngày</h3>
-              <ul className="forecast">
-                {data.daily.map((d) => {
-                  const dt = new Date(d.date + 'T00:00:00')
-                  return (
-                    <li key={d.date}>
-                      <span className="dow">{WEEKDAYS[dt.getDay()]}</span>
-                      <span className="date">
-                        {String(dt.getDate()).padStart(2, '0')}/{String(dt.getMonth() + 1).padStart(2, '0')}
-                      </span>
-                      <span className="ico" title={describe(d.code).text}>
-                        {describe(d.code).icon}
-                      </span>
-                      <span className="hi">{fmtTemp(d.max, unit)}</span>
-                      <span className="lo">{fmtTemp(d.min, unit)}</span>
-                    </li>
-                  )
-                })}
+
+              <ul className="days">
+                {weather.days.map((d, i) => (
+                  <li key={d.date}>
+                    <span className="muted">{i === 0 ? 'Nay' : DAYS[new Date(d.date + 'T00:00').getDay()]}</span>
+                    <span className="icon-sm" title={describe(d.code).text}>
+                      {describe(d.code).icon}
+                    </span>
+                    <span>{deg(d.max)}</span>
+                    <span className="muted">{deg(d.min)}</span>
+                  </li>
+                ))}
               </ul>
-            </>
+            </div>
           )}
-        </section>
-      </main>
+        </main>
+      </div>
     </div>
   )
 }
